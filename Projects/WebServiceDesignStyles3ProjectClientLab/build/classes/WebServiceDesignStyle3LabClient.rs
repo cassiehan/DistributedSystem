@@ -1,0 +1,2 @@
+Result
+WebServiceDesignStyle3LabClient

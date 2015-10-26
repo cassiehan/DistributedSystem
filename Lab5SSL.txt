@@ -1,0 +1,244 @@
+
+95-702 Distributed Systems            SSL Lab 5
+
+The objective of this lab is to learn how to create keys
+and certificates using Java's keytool command and how to program
+with SSL sockets.
+    
+We will also explore the use of user name and password authentication 
+in the layer immediately above the SSL layer. In order to do this we will
+program a simple protocol between the client and the server.
+
+0) As a very first step, please take a few minutes to study Client.java and 
+Server.java (see below). Note how the client accesses a "truststore" and the 
+server accesses a "keystore". Note that passwords are used. These files are 
+password protected when they are created and you will need those exact same
+passwords in your code. You will need to enter passwords when creating the 
+stores. In these simple test examples, I always use the password 'sesame'. 
+You might want to do the same.
+
+1) Create two separate Java projects in Netbeans. One will be called SSLClientProject
+and the other will be called SSLServerProject.
+
+2) We need to place a Java Keystore on the server side. This keystore must be accessible
+by your server code. The server code will look in the projects working directory for the keystore.
+
+So, we need a server side working directory.
+
+      On the server project node:
+      Right click/Properties/Run
+      Browse to a path representing your server side working directory
+      The SSLServerProject directory will be fine
+
+3) We need to place a Java Truststore on the client side. This truststore must be accessible
+by your client code. The client code will look in the projects working directory for the truststore.
+
+So, we need a client side working directory:
+
+      On the client project node:
+      Right click/Properties/Run
+      Browse to a path representing your client side working directory
+      The SSLClientProject directory will be fine
+
+4) We need to run the keytool command from the command line. Note that the JDK bin
+directory must be in your path variable. 
+
+To visit the command line from within Netbeans:
+
+      Window/IDE Tools/Terminal
+     
+Within the terminal window, you can change directories (use cd ) to where your server side 
+and client side working directories are located.
+
+
+5)  In the server side directory, run keytool to create a keystore holding RSA keys.
+
+     keytool -genkey -alias myCool -keyalg RSA -keystore myCoolkeystore.jks
+
+     Respond to the prompts. Use the password sesame for the keystore
+     as well as the key.
+
+     How many bytes is your keystone? ____2KB_____________
+
+6) In the server side directory, run keytool to extract a certificate.
+ 
+    keytool -export -alias myCool -keystore myCoolkeystore.jks -file myCool.cer
+
+    How many bytes is your self signed certificate? ____859 bytes____________
+
+
+7) Move the certificate to the client side directory. It should no 
+    longer be on the serverSide (though, it will not hurt if it is.)
+
+8) On the client side, place the certificate into a truststore.
+
+     keytool -import -alias myCool -keystore myCool.truststore -file myCool.cer
+
+     The truststore now contains a public key that you trust. So, when 
+     prompted, say that you trust this certificate.
+
+     What is the signature algorithm name? ___SHA256withRSA__________
+
+     Who is the owner of this certificate? __Owner: CN=xi han, OU=cmu, O=cmu, L=pittsburgh, ST=pa, C=us___
+
+     Who is the issuer of this certificate? __Issuer: CN=xi han, OU=cmu, O=cmu, L=pittsburgh, ST=pa, C=us___
+
+     How many bytes is your truststore? ___922 byttes_________
+
+9) Create a class called Client in the client side project. Copy the code
+from below into Client.java.
+
+10) Create a class called Server in the server side project. Copy the code
+from below into Server.java.
+
+11) Test everything by running the server and then the client.
+
+12) Modify the client and the server so that the server speaks first.
+It will ask that the client to provide a user name. The client will
+be prompted for the username and will enter one. The server will then
+read the user name and ask the client for a password. The client will
+respond with a password. If the username and password are correct the 
+server will say "Greetings Client!". If the user name and password are
+not correct the server will say "Sorry, you are not authorized". The only
+legal user name and password will be "Josh" and "GoBucs".
+
+In my solution, I had to be sure to use out.newLine() and out.flush()
+when writing to the outgoing sockets. 
+
+For example, I wrote to the SSL socket like this:
+
+out.write(fromUser);
+out.newLine();
+out.flush();
+
+
+In order to read input from the keyboard, I used the Scanner class
+from the java.util package.
+
+// Establish scanner on the keyboard
+Scanner scanner = new Scanner(System.in);
+// Read from user
+scanner.nextLine();
+
+Extra challenges (not required):
+	- Keep the server running so that the client may be run 
+over and over again.
+
+Show this page and your working client and server to your TA or instructor.
+
+If you don't complete the lab by the end of class, you must show a TA during their office hours within six days of the lab class.
+
+==================== Client.java =====================
+import java.io.*;
+import javax.net.ssl.*;
+import java.net.*;
+import javax.net.*;
+
+public class Client {
+    
+    public static void main(String args[]) {
+        
+        int port = 6502;
+        try {
+            // tell the system who we trust
+            System.setProperty("javax.net.ssl.trustStore","myCool.truststore");
+            // get an SSLSocketFactory
+            SocketFactory sf = SSLSocketFactory.getDefault();
+            
+            // an SSLSocket "is a" Socket
+            Socket s = sf.createSocket("localhost",6502);
+            
+            
+            BufferedWriter out = new BufferedWriter(
+                                                    new OutputStreamWriter(
+                                                                           s.getOutputStream()));
+            BufferedReader in = new 
+            BufferedReader(
+                           new InputStreamReader(
+                                                 s.getInputStream()));
+            out.write("Hello server\n");
+            out.flush();
+            String answer = in.readLine();               
+            System.out.println(answer);
+            out.close(); 
+            in.close();
+        }
+        catch(Exception e) {
+            System.out.println("Exception thrown " + e);
+        }
+    }
+} 
+
+
+================== Server.java ================================
+
+
+// Server side SSL 
+import java.io.*;
+import java.net.*;
+import javax.net.*;
+import javax.net.ssl.*;
+import java.security.*;
+
+public class Server {
+    
+    // hold the name of the keystore containing public and private keys
+    static String keyStore = "myCoolkeystore.jks";
+    
+    // password of the keystore (same as the alias)
+    static char keyStorePass[] = "sesame".toCharArray();
+    public static void main(String args[]) {
+        
+        int port = 6502;
+        SSLServerSocket server;
+        
+        try {
+            // get the keystore into memory
+            KeyStore ks = KeyStore.getInstance("JKS");
+            ks.load(new FileInputStream(keyStore), keyStorePass);
+            
+            // initialize the key manager factory with the keystore data
+            KeyManagerFactory kmf = 
+            KeyManagerFactory.getInstance("SunX509");
+            kmf.init(ks,keyStorePass);
+            
+            // initialize the SSLContext engine
+            // may throw NoSuchProvider or NoSuchAlgorithm exception
+            // TLS - Transport Layer Security most generic
+            
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            
+            // Inititialize context with given KeyManagers, TrustManagers, 
+            // SecureRandom defaults taken if null
+            
+            sslContext.init(kmf.getKeyManagers(), null, null);
+            
+            // Get ServerSocketFactory from the context object
+            ServerSocketFactory ssf = sslContext.getServerSocketFactory();
+            //  Now like programming with normal server sockets               
+            ServerSocket serverSocket = ssf.createServerSocket(port);
+            
+            System.out.println("Accepting secure connections");
+            
+            Socket client = serverSocket.accept();
+            System.out.println("Got connection");
+            
+            BufferedWriter out = new BufferedWriter(
+                                                    new OutputStreamWriter(
+                                                                           client.getOutputStream()));
+            BufferedReader in = new BufferedReader(
+                                                   new InputStreamReader(
+                                                                         client.getInputStream()));
+            String msg = in.readLine();
+            System.out.println("Got message " + msg);
+            out.write("Hello client\n");
+            out.flush();
+            in.close();
+            out.close();     
+        }
+        catch(Exception e) {
+            System.out.println("Exception thrown " + e);
+        }
+    }
+}
+
